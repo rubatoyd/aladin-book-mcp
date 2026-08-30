@@ -7,7 +7,7 @@
 [![Downloads](https://img.shields.io/github/downloads/rubatoyd/aladin-book-mcp/total?label=downloads&color=blue)](https://github.com/rubatoyd/aladin-book-mcp/releases)
 
 <!-- usage:start -->
-> 📊 **사용량 통계** — 최근 14일 조회 **0**회(순 0) · 클론 **0**회(순 0) · 릴리스 다운로드 **0**건  
+> 📊 **사용량 통계** — 최근 14일 조회 **0**회 · 클론 **0**회 · 릴리스 다운로드 **1**건  
 > ![Usage Graph](docs/usage.svg)
 <!-- usage:end -->
 

@@ -1,10 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="700" height="260" viewBox="0 0 700 260">
-  <rect width="100%" height="100%" fill="#0d1117" rx="8"/>
-  <text x="350.0" y="25" fill="#c9d1d9" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="14" font-weight="600" text-anchor="middle">Traffic &amp; Release Downloads (Last 14 Days)</text>
-  <polyline fill="none" stroke="#58a6ff" stroke-width="2" points="370.0,220.0"/>
-  <polyline fill="none" stroke="#3fb950" stroke-width="2" points="370.0,220.0"/>
-  <circle cx="520" cy="22" r="5" fill="#58a6ff"/>
-  <text x="530" y="26" fill="#8b949e" font-size="11" font-family="sans-serif">Views</text>
-  <circle cx="610" cy="22" r="5" fill="#3fb950"/>
-  <text x="620" y="26" fill="#8b949e" font-size="11" font-family="sans-serif">Downloads</text>
+  <rect width="100%" height="100%" fill="#0d1117" rx="8" stroke="#30363d" stroke-width="1"/>
+  <text x="55" y="28" fill="#e6edf3" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="13" font-weight="600">Traffic &amp; Release Downloads (Last 14 Days)</text>
+  
+  <!-- Legend -->
+  <circle cx="520" cy="24" r="4.5" fill="#58a6ff"/>
+  <text x="530" y="28" fill="#8b949e" font-size="11" font-family="-apple-system,sans-serif">Views</text>
+  <circle cx="610" cy="24" r="4.5" fill="#3fb950"/>
+  <text x="620" y="28" fill="#8b949e" font-size="11" font-family="-apple-system,sans-serif">Downloads</text>
+
+  <!-- Grid & Ticks -->
+  <line x1="55" y1="215.0" x2="675" y2="215.0" stroke="#21262d" stroke-dasharray="3,3"/><text x="45" y="219.0" fill="#8b949e" font-size="11" font-family="-apple-system,sans-serif" text-anchor="end">0</text><line x1="55" y1="147.0" x2="675" y2="147.0" stroke="#21262d" stroke-dasharray="3,3"/><text x="45" y="151.0" fill="#8b949e" font-size="11" font-family="-apple-system,sans-serif" text-anchor="end">2</text><line x1="55" y1="45.0" x2="675" y2="45.0" stroke="#21262d" stroke-dasharray="3,3"/><text x="45" y="49.0" fill="#8b949e" font-size="11" font-family="-apple-system,sans-serif" text-anchor="end">5</text>
+  <text x="365.0" y="245" fill="#8b949e" font-size="11" font-family="-apple-system,sans-serif" text-anchor="middle">08-30</text>
+
+  <!-- Lines -->
+  
+  
+
+  <!-- Points -->
+  <circle cx="365.0" cy="215.0" r="4" fill="#58a6ff"><title>Views (2026-08-30): 0</title></circle>
+  <circle cx="365.0" cy="181.0" r="4" fill="#3fb950"><title>Downloads (2026-08-30): 1</title></circle>
 </svg>
