@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="260" viewBox="0 0 700 260">
+  <rect width="100%" height="100%" fill="#0d1117" rx="8"/>
+  <text x="350.0" y="25" fill="#c9d1d9" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="14" font-weight="600" text-anchor="middle">Traffic &amp; Release Downloads (Last 14 Days)</text>
+  <polyline fill="none" stroke="#58a6ff" stroke-width="2" points="370.0,220.0"/>
+  <polyline fill="none" stroke="#3fb950" stroke-width="2" points="370.0,220.0"/>
+  <circle cx="520" cy="22" r="5" fill="#58a6ff"/>
+  <text x="530" y="26" fill="#8b949e" font-size="11" font-family="sans-serif">Views</text>
+  <circle cx="610" cy="22" r="5" fill="#3fb950"/>
+  <text x="620" y="26" fill="#8b949e" font-size="11" font-family="sans-serif">Downloads</text>
+</svg>

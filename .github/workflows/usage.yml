@@ -1,0 +1,33 @@
+name: Daily Usage Stats
+
+on:
+  schedule:
+    - cron: "25 3 * * *" # Runs at 03:25 UTC every day
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  record-usage:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Record Traffic & Render SVG
+      run: |
+        python scripts/record_usage.py
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Commit and Push if Changed
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add docs/ README.md
+        git diff --quiet && git diff --staged --quiet || (git commit -m "chore(usage): update daily stats and svg chart [skip ci]" && git push)

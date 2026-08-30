@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "aladin-book": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/rubatoyd/aladin-book-mcp", "aladin-book-mcp"],
+      "env": {
+        "ALADIN_TTB_KEY": "${ALADIN_TTB_KEY:-}",
+        "PYTHONIOENCODING": "utf-8"
+      }
+    }
+  }
+}

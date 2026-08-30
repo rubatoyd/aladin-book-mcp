@@ -1,0 +1,29 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.rubatoyd/aladin-book-mcp",
+  "description": "Aladin Book OpenAPI - search books, original title, TOC, pages, packing, bestseller rankings, and used book prices",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/rubatoyd/aladin-book-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/rubatoyd/aladin-book-mcp",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/rubatoyd/aladin-book-mcp/releases/download/v0.1.0/aladin-book-mcp.mcpb",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" },
+      "fileSha256": "5fa4d08ee745c2db3f44bd2b55629e006c69db5a988b89535741b6cbeca06e74",
+      "environmentVariables": [
+        {
+          "name": "ALADIN_TTB_KEY",
+          "description": "Aladin TTB Key (issued at aladin.co.kr/openapi)",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
