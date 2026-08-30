@@ -7,8 +7,11 @@
 [![Downloads](https://img.shields.io/github/downloads/rubatoyd/aladin-book-mcp/total?label=downloads&color=blue)](https://github.com/rubatoyd/aladin-book-mcp/releases)
 
 <!-- usage:start -->
-> 📊 **사용량 통계** — 최근 14일 조회 **0**회 · 클론 **0**회 · 릴리스 다운로드 **1**건  
-> ![Usage Graph](docs/usage.svg)
+> 📈 **사용량** — 최근 14일 조회 **0**회(고유 0) · 클론 **0**회(고유 0) · 릴리스 자산 누적 다운로드 **1**
+>
+> ![일별 클론·조회 추이](docs/usage.svg)
+>
+> <sub>2026-08-30 자동 갱신 · 전체 이력은 [`docs/usage.csv`](docs/usage.csv). GitHub 트래픽 통계는 14일 창만 제공하므로 이 저장소가 매일 찍어 누적한다.</sub>
 <!-- usage:end -->
 
 **알라딘(Aladin) Open API**를 활용하여 도서 검색, **원서명(원제), 전체 목차(TOC), 쪽수(페이지 수), 판형/무게, 부제, 베스트셀러 순위, 중고서점 매물 및 최저가**를 조회하고 엑셀/CSV 등으로 일괄 수집하는 Model Context Protocol (MCP) 서버 및 독립 CLI 도구입니다.

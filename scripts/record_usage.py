@@ -1,202 +1,225 @@
-#!/usr/bin/env python3
-"""Record traffic and release statistics for aladin-book-mcp repository."""
+"""저장소 사용량을 `docs/usage.csv` 에 **누적 기록**한다 (GitHub Actions 일일 실행용).
 
+왜 필요한가 — GitHub 의 트래픽(조회·클론) 통계는 **14일 롤링 윈도**라 그 뒤로는 사라진다.
+릴리스 자산 다운로드 수만 영구 누적된다. 장기 추세를 보려면 주기적으로 찍어 두는 수밖에 없다.
+
+핵심 설계: **날짜 키로 병합(upsert)한다.** 오늘 값을 덧붙이는 게 아니라 API 가 주는
+14일치 일별 값을 통째로 받아 기존 행을 갱신한다. 그래서
+  · 워크플로가 며칠 쉬어도 **최대 13일까지 자동으로 메워진다**
+  · 당일 수치가 나중에 올라가도(집계 지연) 다음 실행이 바로잡는다
+단순 append 로 짰다면 중복 행이 쌓이고 결손은 영영 못 메운다.
+
+⚠️ 트래픽 API 는 **push 권한**을 요구한다. **Actions 의 기본 `GITHUB_TOKEN` 으로는 403 이다**
+   (실측 확인). 조회·클론까지 남기려면 저장소 Secrets 에 `USAGE_TOKEN` 을 넣어야 한다
+   — classic PAT(scope: `repo`) 또는 fine-grained PAT(권한: Administration → Read).
+   토큰이 없어도 실패로 끝내지 않고 다운로드·스타 스냅샷만 기록하고 `note` 에 사유를 남긴다
+   (부분 기록이 무기록보다 낫다).
+"""
 from __future__ import annotations
+
 import csv
 import json
 import os
-import re
+import sys
+import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
-OWNER = "rubatoyd"
-REPO = "aladin-book-mcp"
-DOCS_DIR = Path("docs")
-CSV_PATH = DOCS_DIR / "usage.csv"
-SVG_PATH = DOCS_DIR / "usage.svg"
-README_PATH = Path("README.md")
-HEADERS = ["date", "views", "clones", "stars", "releases_downloads"]
+REPO = os.environ.get("GITHUB_REPOSITORY", "rubatoyd/aladin-book-mcp")
+TOKEN = os.environ.get("GITHUB_TOKEN", "")
+OUT = Path(os.environ.get("USAGE_CSV", "docs/usage.csv"))
+
+# 트래픽(일별) + 스냅샷(그날 시점의 누적값)
+FIELDS = ["date", "views", "view_uniques", "clones", "clone_uniques",
+          "release_downloads", "releases", "stars", "forks", "note"]
 
 
-def gh_api(endpoint: str = "") -> dict | list:
-    url = f"https://api.github.com/repos/{OWNER}/{REPO}"
-    if endpoint:
-        url = f"{url}/{endpoint.lstrip('/')}"
-    token = os.environ.get("GITHUB_TOKEN")
-    req = urllib.request.Request(url)
-    req.add_header("Accept", "application/vnd.github+json")
-    req.add_header("User-Agent", "UsageTracker/1.0")
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
+def api(path: str = ""):
+    """GitHub API GET. 403/404 는 None 을 돌려주고 호출부가 사유를 기록한다.
+
+    ⚠️ 빈 path 로 후행 슬래시를 붙이면 404 다(`repos/owner/name/` ≠ `repos/owner/name`).
+       로컬 리허설에서 저장소 메타(스타·포크)가 통째로 빠지는 것으로 드러났다.
+    """
+    url = f"https://api.github.com/repos/{REPO}" + (f"/{path}" if path else "")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "usage-recorder",
+    }
+    if TOKEN:
+        headers["Authorization"] = f"Bearer {TOKEN}"
+
+    req = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode())
-    except Exception as e:
-        print(f"Warning: Failed to fetch {endpoint}: {e}")
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        print(f"  !! {path} → HTTP {e.code}", file=sys.stderr)
+        return None
+    except Exception as e:  # noqa: BLE001
+        print(f"  !! {path} → {type(e).__name__}", file=sys.stderr)
+        return None
+
+
+def load() -> dict[str, dict]:
+    if not OUT.exists():
         return {}
+    with OUT.open(encoding="utf-8") as f:
+        return {row["date"]: row for row in csv.DictReader(f)}
 
 
-def get_traffic():
-    views_data = gh_api("traffic/views")
-    clones_data = gh_api("traffic/clones")
-    repo_data = gh_api("")
-    releases_data = gh_api("releases")
+README = Path(os.environ.get("USAGE_README", "README.md"))
+CHART = Path(os.environ.get("USAGE_SVG", "docs/usage.svg"))
+MARK_A, MARK_B = "<!-- usage:start -->", "<!-- usage:end -->"
 
-    views = views_data.get("count", 0) if isinstance(views_data, dict) else 0
-    clones = clones_data.get("count", 0) if isinstance(clones_data, dict) else 0
-    stars = repo_data.get("stargazers_count", 0) if isinstance(repo_data, dict) else 0
-
-    downloads = 0
-    if isinstance(releases_data, list):
-        for rel in releases_data:
-            for asset in rel.get("assets", []):
-                downloads += asset.get("download_count", 0)
-
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    return today, views, clones, stars, downloads
+# GitHub 은 README 의 라이트/다크 테마를 오가므로 **양쪽에서 읽히는 색**만 쓴다.
+# (SVG 안의 <style> media query 는 GitHub 이미지 렌더링에서 신뢰할 수 없다.)
+_CLONE, _VIEW, _AXIS = "#3b82f6", "#f59e0b", "#8b949e"
 
 
-def generate_svg(rows: list[dict]):
-    DOCS_DIR.mkdir(parents=True, exist_ok=True)
-    recent = rows[-14:] if len(rows) >= 14 else rows
-    
-    dates = [r["date"] for r in recent]
-    views = [int(r.get("views", 0)) for r in recent]
-    downloads = [int(r.get("releases_downloads", 0)) for r in recent]
+def write_chart(rows: dict[str, dict]) -> bool:
+    """일별 클론·조회 추이를 **의존성 없이** SVG 로 그린다.
 
-    if not dates:
-        dates = [datetime.now(timezone.utc).strftime("%Y-%m-%d")]
-        views = [0]
-        downloads = [0]
+    matplotlib 같은 것을 끌어오면 워크플로가 무거워지고 실패 지점이 는다.
+    선 두 개짜리 그래프에 그럴 이유가 없어 좌표를 직접 찍는다.
+    """
+    dates = sorted(rows)
+    if len(dates) < 2:
+        return False
+    clones = [int(rows[d].get("clones") or 0) for d in dates]
+    views = [int(rows[d].get("views") or 0) for d in dates]
+    hi = max(max(clones), max(views), 1)
 
-    max_val = max(max(views), max(downloads), 5)
-    # round max_val up to nice interval
-    if max_val <= 5:
-        y_max = 5
-        y_ticks = [0, 2, 5]
-    elif max_val <= 10:
-        y_max = 10
-        y_ticks = [0, 5, 10]
-    else:
-        y_max = ((max_val + 9) // 10) * 10
-        y_ticks = [0, y_max // 2, y_max]
+    W, H, PAD_L, PAD_B, PAD_T = 720, 200, 34, 26, 16
+    iw, ih = W - PAD_L - 10, H - PAD_B - PAD_T
 
-    width, height = 700, 260
-    pad_left, pad_bottom, pad_top, pad_right = 55, 45, 45, 25
-    plot_w = width - pad_left - pad_right
-    plot_h = height - pad_top - pad_bottom
+    def pts(vals):
+        n = len(vals) - 1 or 1
+        return " ".join(f"{PAD_L + i * iw / n:.1f},{PAD_T + ih - v * ih / hi:.1f}"
+                        for i, v in enumerate(vals))
 
-    n = len(dates)
-    pts_v = []
-    pts_d = []
-    
-    for i, (v, d) in enumerate(zip(views, downloads)):
-        x = pad_left + (i / max(1, n - 1)) * plot_w if n > 1 else pad_left + plot_w / 2
-        y_v = pad_top + plot_h - (v / y_max) * plot_h
-        y_d = pad_top + plot_h - (d / y_max) * plot_h
-        pts_v.append((x, y_v, v, dates[i]))
-        pts_d.append((x, y_d, d, dates[i]))
+    # y 눈금 3개 · x 라벨은 처음/중간/끝만(겹침 방지)
+    ticks = "".join(
+        f'<line x1="{PAD_L}" y1="{PAD_T + ih - f * ih:.1f}" x2="{W - 10}" '
+        f'y2="{PAD_T + ih - f * ih:.1f}" stroke="{_AXIS}" stroke-opacity=".25"/>'
+        f'<text x="{PAD_L - 6}" y="{PAD_T + ih - f * ih + 4:.1f}" font-size="10" '
+        f'fill="{_AXIS}" text-anchor="end">{int(hi * f)}</text>'
+        for f in (0, 0.5, 1))
+    xl = "".join(
+        f'<text x="{PAD_L + i * iw / (len(dates) - 1):.1f}" y="{H - 8}" font-size="10" '
+        f'fill="{_AXIS}" text-anchor="{a}">{dates[i][5:]}</text>'
+        for i, a in ((0, "start"), (len(dates) // 2, "middle"), (len(dates) - 1, "end")))
 
-    # SVG Elements
-    grid_lines = []
-    for val in y_ticks:
-        y = pad_top + plot_h - (val / y_max) * plot_h
-        grid_lines.append(f'<line x1="{pad_left}" y1="{y:.1f}" x2="{width - pad_right}" y2="{y:.1f}" stroke="#21262d" stroke-dasharray="3,3"/>')
-        grid_lines.append(f'<text x="{pad_left - 10}" y="{y + 4:.1f}" fill="#8b949e" font-size="11" font-family="-apple-system,sans-serif" text-anchor="end">{val}</text>')
-
-    x_labels = []
-    # show first, middle, and last date if multiple
-    label_indices = [0, n - 1] if n > 1 else [0]
-    if n > 4:
-        label_indices.insert(1, n // 2)
-    for idx in sorted(set(label_indices)):
-        x, _, _, dt = pts_v[idx]
-        short_dt = dt[5:] if len(dt) >= 10 else dt
-        x_labels.append(f'<text x="{x:.1f}" y="{height - 15}" fill="#8b949e" font-size="11" font-family="-apple-system,sans-serif" text-anchor="middle">{short_dt}</text>')
-
-    poly_v = " ".join(f"{x:.1f},{y:.1f}" for x, y, _, _ in pts_v)
-    poly_d = " ".join(f"{x:.1f},{y:.1f}" for x, y, _, _ in pts_d)
-
-    circles_v = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#58a6ff"><title>Views ({dt}): {val}</title></circle>' for x, y, val, dt in pts_v)
-    circles_d = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#3fb950"><title>Downloads ({dt}): {val}</title></circle>' for x, y, val, dt in pts_d)
-
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
-  <rect width="100%" height="100%" fill="#0d1117" rx="8" stroke="#30363d" stroke-width="1"/>
-  <text x="{pad_left}" y="28" fill="#e6edf3" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif" font-size="13" font-weight="600">Traffic &amp; Release Downloads (Last 14 Days)</text>
-  
-  <!-- Legend -->
-  <circle cx="{width-180}" cy="24" r="4.5" fill="#58a6ff"/>
-  <text x="{width-170}" y="28" fill="#8b949e" font-size="11" font-family="-apple-system,sans-serif">Views</text>
-  <circle cx="{width-90}" cy="24" r="4.5" fill="#3fb950"/>
-  <text x="{width-80}" y="28" fill="#8b949e" font-size="11" font-family="-apple-system,sans-serif">Downloads</text>
-
-  <!-- Grid & Ticks -->
-  {"".join(grid_lines)}
-  {"".join(x_labels)}
-
-  <!-- Lines -->
-  {f'<polyline fill="none" stroke="#58a6ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="{poly_v}"/>' if n > 1 else ''}
-  {f'<polyline fill="none" stroke="#3fb950" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="{poly_d}"/>' if n > 1 else ''}
-
-  <!-- Points -->
-  {circles_v}
-  {circles_d}
-</svg>"""
-
-    with open(SVG_PATH, "w", encoding="utf-8") as f:
-        f.write(svg)
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" \
+viewBox="0 0 {W} {H}" font-family="-apple-system,Segoe UI,sans-serif" role="img" \
+aria-label="일별 클론·조회 추이">
+<title>일별 클론·조회 추이 ({dates[0]} ~ {dates[-1]})</title>
+{ticks}{xl}
+<polyline fill="none" stroke="{_CLONE}" stroke-width="2" points="{pts(clones)}"/>
+<polyline fill="none" stroke="{_VIEW}" stroke-width="2" points="{pts(views)}"/>
+<circle cx="{W - 150}" cy="12" r="4" fill="{_CLONE}"/>
+<text x="{W - 140}" y="16" font-size="11" fill="{_AXIS}">clones</text>
+<circle cx="{W - 78}" cy="12" r="4" fill="{_VIEW}"/>
+<text x="{W - 68}" y="16" font-size="11" fill="{_AXIS}">views</text>
+</svg>
+"""
+    CHART.parent.mkdir(parents=True, exist_ok=True)
+    CHART.write_text(svg, encoding="utf-8")
+    return True
 
 
-def update_readme_stats(views: int, clones: int, downloads: int):
-    if not README_PATH.exists():
+def update_readme(rows: dict[str, dict], snap: dict, today: str) -> None:
+    """README 의 표시 블록을 갱신한다 (마커가 있을 때만).
+
+    조회·클론은 **최근 14일 합**이다 — GitHub 가 그 창만 주므로 '누적'이라 쓰면 거짓이 된다.
+    다운로드는 릴리스 자산 누적이라 성격이 다르니 따로 표기한다.
+    """
+    if not README.exists():
         return
-    content = README_PATH.read_text(encoding="utf-8")
-    new_stats = f"> 📊 **사용량 통계** — 최근 14일 조회 **{views:,}**회 · 클론 **{clones:,}**회 · 릴리스 다운로드 **{downloads:,}**건  \n> ![Usage Graph](docs/usage.svg)"
-    pattern = r"<!-- usage:start -->[\s\S]*?<!-- usage:end -->"
-    replacement = f"<!-- usage:start -->\n{new_stats}\n<!-- usage:end -->"
-    if re.search(pattern, content):
-        updated = re.sub(pattern, replacement, content)
-        README_PATH.write_text(updated, encoding="utf-8")
+    text = README.read_text(encoding="utf-8")
+    if MARK_A not in text or MARK_B not in text:
+        print(f"  (README 에 {MARK_A} 마커가 없어 건너뜀)")
+        return
+
+    recent = sorted(rows)[-14:]
+    def s(key: str) -> int:
+        return sum(int(rows[d].get(key) or 0) for d in recent)
+
+    dl = snap.get("release_downloads") or "—"
+    chart = f"\n>\n> ![일별 클론·조회 추이]({CHART.as_posix()})\n" if write_chart(rows) else ""
+    body = (f"> 📈 **사용량** — 최근 14일 조회 **{s('views'):,}**회(고유 {s('view_uniques'):,}) · "
+            f"클론 **{s('clones'):,}**회(고유 {s('clone_uniques'):,}) · "
+            f"릴리스 자산 누적 다운로드 **{dl}**"
+            f"{chart}"
+            f">\n> <sub>{today} 자동 갱신 · 전체 이력은 [`docs/usage.csv`](docs/usage.csv). "
+            f"GitHub 트래픽 통계는 14일 창만 제공하므로 이 저장소가 매일 찍어 누적한다.</sub>")
+
+    head, rest = text.split(MARK_A, 1)
+    _old, tail = rest.split(MARK_B, 1)
+    README.write_text(f"{head}{MARK_A}\n{body}\n{MARK_B}{tail}", encoding="utf-8")
+    print(f"  README 사용량 블록 갱신 완료")
 
 
-def main():
-    DOCS_DIR.mkdir(parents=True, exist_ok=True)
-    today, views, clones, stars, downloads = get_traffic()
+def main() -> int:
+    rows = load()
+    before = len(rows)
+    notes: list[str] = []
 
-    rows = []
-    if CSV_PATH.exists():
-        with open(CSV_PATH, "r", encoding="utf-8") as f:
-            rows = list(csv.DictReader(f))
+    def touch(d: str) -> dict:
+        return rows.setdefault(d, {**{k: "" for k in FIELDS}, "date": d})
 
-    updated = False
-    for r in rows:
-        if r.get("date") == today:
-            r["views"] = str(views)
-            r["clones"] = str(clones)
-            r["stars"] = str(stars)
-            r["releases_downloads"] = str(downloads)
-            updated = True
-            break
+    # ── 트래픽 14일치 일별 병합 ────────────────────────────────────────────────
+    for kind, keys in (("views", ("views", "view_uniques")),
+                       ("clones", ("clones", "clone_uniques"))):
+        data = api(f"traffic/{kind}")
+        if data is None:
+            notes.append(f"{kind}:권한없음")
+            continue
+        for item in data.get(kind, []):
+            d = item["timestamp"][:10]
+            r = touch(d)
+            r[keys[0]] = item["count"]
+            r[keys[1]] = item["uniques"]
 
-    if not updated:
-        rows.append({
-            "date": today,
-            "views": str(views),
-            "clones": str(clones),
-            "stars": str(stars),
-            "releases_downloads": str(downloads),
-        })
+    # ── 오늘 시점 스냅샷(누적값) ──────────────────────────────────────────────
+    today = datetime.now(timezone.utc).date().isoformat()
+    snap = touch(today)
 
-    with open(CSV_PATH, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=HEADERS)
-        writer.writeheader()
-        writer.writerows(rows)
+    rel = api("releases")
+    if rel is not None:
+        snap["release_downloads"] = sum(a.get("download_count", 0)
+                                        for x in rel for a in x.get("assets", []))
+        snap["releases"] = len(rel)
+    else:
+        notes.append("releases:조회실패")
 
-    generate_svg(rows)
-    update_readme_stats(views, clones, downloads)
-    print(f"Recorded usage for {today}: views={views}, clones={clones}, stars={stars}, downloads={downloads}")
+    meta = api("")
+    if meta is not None:
+        snap["stars"] = meta.get("stargazers_count", "")
+        snap["forks"] = meta.get("forks_count", "")
+    else:
+        notes.append("repo:조회실패")
+
+    snap["note"] = ";".join(notes)
+
+    # ── 저장 (날짜 오름차순) ──────────────────────────────────────────────────
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    with OUT.open("w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=FIELDS)
+        w.writeheader()
+        for d in sorted(rows):
+            w.writerow({k: rows[d].get(k, "") for k in FIELDS})
+
+    update_readme(rows, snap, today)
+
+    print(f"{REPO}: {before} → {len(rows)}행  ({OUT})")
+    print(f"  오늘({today}) 스냅샷: 다운로드 {snap['release_downloads']} · "
+          f"스타 {snap['stars']} · 조회 {snap['views']} · 클론 {snap['clones']}")
+    if notes:
+        print(f"  ℹ️ 안내: {';'.join(notes)}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
