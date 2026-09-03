@@ -11,7 +11,7 @@
 >
 > ![일별 클론·조회 추이](docs/usage.svg)
 >
-> <sub>2026-09-02 자동 갱신 · 전체 이력은 [`docs/usage.csv`](docs/usage.csv). GitHub 트래픽 통계는 14일 창만 제공하므로 이 저장소가 매일 찍어 누적한다.</sub>
+> <sub>2026-09-03 자동 갱신 · 전체 이력은 [`docs/usage.csv`](docs/usage.csv). GitHub 트래픽 통계는 14일 창만 제공하므로 이 저장소가 매일 찍어 누적한다.</sub>
 <!-- usage:end -->
 
 **알라딘(Aladin) Open API**를 활용하여 도서 검색, **원서명(원제), 전체 목차(TOC), 쪽수(페이지 수), 판형/무게, 부제, 베스트셀러 순위, 중고서점 매물 및 최저가**를 조회하고 엑셀/CSV 등으로 일괄 수집하는 Model Context Protocol (MCP) 서버 및 독립 CLI 도구입니다.
